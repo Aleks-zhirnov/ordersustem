@@ -321,27 +321,28 @@
         });
 
         // Загрузка заказов
-        async function loadOrders() {
+        function loadOrders() {
             try {
-                const result = await window.storage.list('order:');
-                if (result && result.keys) {
-                    const loadedOrders = [];
-                    for (const key of result.keys) {
-                        try {
-                            const data = await window.storage.get(key);
-                            if (data) {
-                                loadedOrders.push(JSON.parse(data.value));
-                            }
-                        } catch (e) {
-                            console.error('Error loading order:', e);
-                        }
-                    }
-                    orders = loadedOrders.sort((a, b) => new Date(b.date) - new Date(a.date));
+                const savedOrders = localStorage.getItem('orders');
+                if (savedOrders) {
+                    orders = JSON.parse(savedOrders).sort((a, b) => new Date(b.date) - new Date(a.date));
+                } else {
+                    orders = [];
                 }
             } catch (error) {
                 console.log('Загрузка заказов:', error);
+                orders = [];
             }
             renderOrdersList();
+        }
+        
+        // Сохранение всех заказов
+        function saveAllOrders() {
+            try {
+                localStorage.setItem('orders', JSON.stringify(orders));
+            } catch (error) {
+                console.error('Ошибка сохранения:', error);
+            }
         }
 
         // Отображение списка заказов
@@ -428,12 +429,13 @@
         }
 
         // Удалить заказ
-        async function deleteOrder(orderId) {
+        function deleteOrder(orderId) {
             if (!confirm('Удалить заказ?')) return;
             
             try {
-                await window.storage.delete(orderId);
-                await loadOrders();
+                orders = orders.filter(o => o.id !== orderId);
+                saveAllOrders();
+                renderOrdersList();
             } catch (error) {
                 alert('Ошибка удаления: ' + error.message);
             }
@@ -527,7 +529,7 @@
         }
 
         // Сохранить заказ
-        async function saveOrder() {
+        function saveOrder() {
             const clientName = document.getElementById('clientName').value.trim();
             const clientPhone = document.getElementById('clientPhone').value.trim();
             
@@ -555,7 +557,7 @@
             }
             
             const order = {
-                id: currentOrderId || 'order:' + Date.now(),
+                id: currentOrderId || 'order_' + Date.now(),
                 date: document.getElementById('orderDate').value,
                 executor: document.getElementById('executor').value,
                 clientName: clientName,
@@ -566,8 +568,19 @@
             };
             
             try {
-                await window.storage.set(order.id, JSON.stringify(order));
-                await loadOrders();
+                if (currentOrderId) {
+                    // Обновляем существующий заказ
+                    const index = orders.findIndex(o => o.id === currentOrderId);
+                    if (index !== -1) {
+                        orders[index] = order;
+                    }
+                } else {
+                    // Добавляем новый заказ
+                    orders.push(order);
+                }
+                
+                saveAllOrders();
+                loadOrders();
                 showList();
             } catch (error) {
                 alert('Ошибка сохранения: ' + error.message);
