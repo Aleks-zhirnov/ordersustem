@@ -1,0 +1,596 @@
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, FileText, Archive, Download } from 'lucide-react';
+
+export default function OrderManager() {
+  const [orders, setOrders] = useState([]);
+  const [currentOrder, setCurrentOrder] = useState(null);
+  const [view, setView] = useState('list');
+  
+  const [orderData, setOrderData] = useState({
+    date: new Date().toISOString().split('T')[0],
+    executor: 'Жирнов А.С.',
+    clientName: '',
+    clientPhone: '',
+    items: [{ id: 1, name: '', quantity: 1, price: 0, discount: 0 }],
+    generalDiscount: 0
+  });
+
+  useEffect(() => {
+    loadOrders();
+  }, []);
+
+  const loadOrders = async () => {
+    try {
+      const result = await window.storage.list('order:');
+      if (result && result.keys) {
+        const loadedOrders = await Promise.all(
+          result.keys.map(async (key) => {
+            try {
+              const data = await window.storage.get(key);
+              return data ? JSON.parse(data.value) : null;
+            } catch {
+              return null;
+            }
+          })
+        );
+        setOrders(loadedOrders.filter(o => o !== null).sort((a, b) => 
+          new Date(b.date) - new Date(a.date)
+        ));
+      }
+    } catch (error) {
+      console.log('Загрузка заказов:', error);
+    }
+  };
+
+  const saveOrder = async () => {
+    if (!orderData.clientName || !orderData.clientPhone) {
+      alert('Заполните имя заказчика и номер телефона');
+      return;
+    }
+    
+    const orderId = currentOrder?.id || `order:${Date.now()}`;
+    const orderToSave = { ...orderData, id: orderId, createdAt: Date.now() };
+    
+    try {
+      await window.storage.set(orderId, JSON.stringify(orderToSave));
+      await loadOrders();
+      setView('list');
+      resetForm();
+      setCurrentOrder(null);
+    } catch (error) {
+      alert('Ошибка сохранения: ' + error.message);
+    }
+  };
+
+  const deleteOrder = async (orderId) => {
+    if (!confirm('Удалить заказ?')) return;
+    
+    try {
+      await window.storage.delete(orderId);
+      await loadOrders();
+    } catch (error) {
+      alert('Ошибка удаления: ' + error.message);
+    }
+  };
+
+  const editOrder = (order) => {
+    setCurrentOrder(order);
+    setOrderData(order);
+    setView('edit');
+  };
+
+  const resetForm = () => {
+    setOrderData({
+      date: new Date().toISOString().split('T')[0],
+      executor: 'Жирнов А.С.',
+      clientName: '',
+      clientPhone: '',
+      items: [{ id: 1, name: '', quantity: 1, price: 0, discount: 0 }],
+      generalDiscount: 0
+    });
+  };
+
+  const addItem = () => {
+    const newId = Math.max(...orderData.items.map(i => i.id), 0) + 1;
+    setOrderData({
+      ...orderData,
+      items: [...orderData.items, { id: newId, name: '', quantity: 1, price: 0, discount: 0 }]
+    });
+  };
+
+  const removeItem = (id) => {
+    if (orderData.items.length === 1) return;
+    setOrderData({
+      ...orderData,
+      items: orderData.items.filter(item => item.id !== id)
+    });
+  };
+
+  const updateItem = (id, field, value) => {
+    setOrderData({
+      ...orderData,
+      items: orderData.items.map(item =>
+        item.id === id ? { ...item, [field]: value } : item
+      )
+    });
+  };
+
+  const calculateItemTotal = (item) => {
+    const subtotal = item.quantity * item.price;
+    return subtotal - (subtotal * item.discount / 100);
+  };
+
+  const calculateTotal = () => {
+    const itemsTotal = orderData.items.reduce((sum, item) => sum + calculateItemTotal(item), 0);
+    return itemsTotal - (itemsTotal * orderData.generalDiscount / 100);
+  };
+
+  const calculateSubtotal = () => {
+    return orderData.items.reduce((sum, item) => sum + calculateItemTotal(item), 0);
+  };
+
+  const hasDiscounts = () => {
+    return orderData.generalDiscount > 0 || orderData.items.some(item => item.discount > 0);
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+  };
+
+  const numberToWords = (num) => {
+    const ones = ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'];
+    const tens = ['', '', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто'];
+    const hundreds = ['', 'сто', 'двести', 'триста', 'четыреста', 'пятьсот', 'шестьсот', 'семьсот', 'восемьсот', 'девятьсот'];
+    const teens = ['десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать', 'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать'];
+    const thousands = ['тысяча', 'тысячи', 'тысяч'];
+    
+    if (num === 0) return 'ноль';
+    
+    const intPart = Math.floor(num);
+    let result = '';
+    
+    if (intPart >= 1000) {
+      const th = Math.floor(intPart / 1000);
+      const thMod = th % 10;
+      const thMod100 = th % 100;
+      
+      if (th >= 100) result += hundreds[Math.floor(th / 100)] + ' ';
+      if (thMod100 >= 10 && thMod100 < 20) {
+        result += teens[thMod100 - 10] + ' ';
+      } else {
+        if (Math.floor((th % 100) / 10) > 0) result += tens[Math.floor((th % 100) / 10)] + ' ';
+        if (thMod > 0) {
+          const femOnes = ['', 'одна', 'две', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'];
+          result += femOnes[thMod] + ' ';
+        }
+      }
+      
+      if (thMod100 >= 10 && thMod100 <= 20) {
+        result += thousands[2] + ' ';
+      } else if (thMod === 1) {
+        result += thousands[0] + ' ';
+      } else if (thMod >= 2 && thMod <= 4) {
+        result += thousands[1] + ' ';
+      } else {
+        result += thousands[2] + ' ';
+      }
+    }
+    
+    const remainder = intPart % 1000;
+    if (remainder >= 100) result += hundreds[Math.floor(remainder / 100)] + ' ';
+    const lastTwo = remainder % 100;
+    if (lastTwo >= 10 && lastTwo < 20) {
+      result += teens[lastTwo - 10] + ' ';
+    } else {
+      if (Math.floor(lastTwo / 10) > 0) result += tens[Math.floor(lastTwo / 10)] + ' ';
+      if (lastTwo % 10 > 0) result += ones[lastTwo % 10] + ' ';
+    }
+    
+    const lastDigit = intPart % 10;
+    const lastTwoDigits = intPart % 100;
+    
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+      result += 'рублей';
+    } else if (lastDigit === 1) {
+      result += 'рубль';
+    } else if (lastDigit >= 2 && lastDigit <= 4) {
+      result += 'рубля';
+    } else {
+      result += 'рублей';
+    }
+    
+    const kopeks = Math.round((num - intPart) * 100);
+    result += ' ' + String(kopeks).padStart(2, '0') + ' копеек';
+    
+    return result.trim().charAt(0).toUpperCase() + result.trim().slice(1);
+  };
+
+  const printOrder = (order) => {
+    const printWindow = window.open('', '_blank');
+    const total = order.items.reduce((sum, item) => {
+      const itemTotal = item.quantity * item.price;
+      return sum + (itemTotal - (itemTotal * item.discount / 100));
+    }, 0);
+    const subtotal = order.items.reduce((sum, item) => {
+      const itemTotal = item.quantity * item.price;
+      return sum + (itemTotal - (itemTotal * item.discount / 100));
+    }, 0);
+    const finalTotal = subtotal - (subtotal * order.generalDiscount / 100);
+    const hasDisc = order.generalDiscount > 0 || order.items.some(item => item.discount > 0);
+    
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Заказ от ${formatDate(order.date)}</title>
+        <style>
+          @media print {
+            body { margin: 0; }
+            .no-print { display: none; }
+          }
+          body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 20px; }
+          .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+          .header h1 { margin: 0; font-size: 18px; font-weight: bold; }
+          .info-section { margin: 20px 0; }
+          .info-row { display: flex; margin: 8px 0; }
+          .info-label { width: 200px; }
+          .info-value { font-weight: bold; }
+          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+          th, td { border: 1px solid #000; padding: 8px; text-align: left; }
+          th { background-color: #f0f0f0; font-weight: bold; }
+          .center { text-align: center; }
+          .right { text-align: right; }
+          .total-section { text-align: right; margin-top: 20px; font-size: 16px; }
+          .total-row { margin: 5px 0; }
+          .total-label { font-weight: bold; }
+          .total-amount { font-weight: bold; font-size: 18px; }
+          .footer { margin-top: 30px; font-size: 14px; }
+          .print-button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-bottom: 20px; }
+        </style>
+      </head>
+      <body>
+        <button class="print-button no-print" onclick="window.print()">Печать / Сохранить как PDF</button>
+        <div class="header">
+          <h1>Заказ от ${formatDate(order.date)}</h1>
+        </div>
+        <div class="info-section">
+          <div class="info-row">
+            <div class="info-label">Исполнитель:</div>
+            <div class="info-value">${order.executor}</div>
+          </div>
+          <div class="info-row">
+            <div class="info-label">Заказчик:</div>
+            <div class="info-value">${order.clientName}, тел.: ${order.clientPhone}</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th class="center">№</th>
+              <th>Товары (работы, услуги)</th>
+              <th class="center">Кол-во</th>
+              <th class="right">Цена</th>
+              ${hasDisc ? '<th class="center">Скидка</th>' : ''}
+              <th class="right">Сумма</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${order.items.map((item, idx) => {
+              const itemSubtotal = item.quantity * item.price;
+              const itemTotal = itemSubtotal - (itemSubtotal * item.discount / 100);
+              return `
+                <tr>
+                  <td class="center">${idx + 1}</td>
+                  <td>${item.name}</td>
+                  <td class="center">${item.quantity}</td>
+                  <td class="right">${item.price.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                  ${hasDisc ? `<td class="center">${item.discount > 0 ? item.discount + '%' : '-'}</td>` : ''}
+                  <td class="right">${itemTotal.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+        <div class="total-section">
+          ${order.generalDiscount > 0 ? `
+            <div class="total-row">
+              <span class="total-label">Сумма:</span>
+              <span>${subtotal.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            </div>
+            <div class="total-row">
+              <span class="total-label">Общая скидка:</span>
+              <span>${order.generalDiscount}%</span>
+            </div>
+            <div class="total-row">
+              <span class="total-label">Итого со скидкой:</span>
+              <span class="total-amount">${finalTotal.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            </div>
+          ` : `
+            <div class="total-row">
+              <span class="total-label">Итого:</span>
+              <span class="total-amount">${finalTotal.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            </div>
+          `}
+        </div>
+        <div class="footer">
+          Всего наименований ${order.items.length}, на сумму ${finalTotal.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})} руб.<br>
+          <strong>${numberToWords(finalTotal)}</strong>
+        </div>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  if (view === 'list') {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div className="flex justify-between items-center mb-6">
+              <h1 className="text-3xl font-bold text-gray-800">Архив заказов</h1>
+              <button
+                onClick={() => { resetForm(); setView('edit'); }}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Plus size={20} />
+                Новый заказ
+              </button>
+            </div>
+          </div>
+
+          {orders.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-md p-12 text-center">
+              <Archive size={64} className="mx-auto text-gray-300 mb-4" />
+              <p className="text-gray-500 text-lg">Заказов пока нет. Создайте первый заказ!</p>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {orders.map((order) => {
+                const total = order.items.reduce((sum, item) => {
+                  const itemTotal = item.quantity * item.price;
+                  return sum + (itemTotal - (itemTotal * item.discount / 100));
+                }, 0);
+                const finalTotal = total - (total * order.generalDiscount / 100);
+                
+                return (
+                  <div key={order.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-4 mb-2">
+                          <h3 className="text-xl font-bold text-gray-800">{order.clientName}</h3>
+                          <span className="text-sm text-gray-500">{formatDate(order.date)}</span>
+                        </div>
+                        <p className="text-gray-600 mb-2">{order.clientPhone}</p>
+                        <p className="text-sm text-gray-500">Позиций: {order.items.length}</p>
+                        <p className="text-2xl font-bold text-blue-600 mt-2">
+                          {finalTotal.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ₽
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => printOrder(order)}
+                          className="bg-green-600 text-white p-2 rounded hover:bg-green-700"
+                          title="Печать"
+                        >
+                          <Download size={20} />
+                        </button>
+                        <button
+                          onClick={() => editOrder(order)}
+                          className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
+                          title="Редактировать"
+                        >
+                          <FileText size={20} />
+                        </button>
+                        <button
+                          onClick={() => deleteOrder(order.id)}
+                          className="bg-red-600 text-white p-2 rounded hover:bg-red-700"
+                          title="Удалить"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-3xl font-bold text-gray-800">
+              {currentOrder ? 'Редактирование заказа' : 'Новый заказ'}
+            </h1>
+            <button
+              onClick={() => { setView('list'); setCurrentOrder(null); resetForm(); }}
+              className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700"
+            >
+              ← Назад
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Дата заказа</label>
+              <input
+                type="date"
+                value={orderData.date}
+                onChange={(e) => setOrderData({ ...orderData, date: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Исполнитель</label>
+              <input
+                type="text"
+                value={orderData.executor}
+                onChange={(e) => setOrderData({ ...orderData, executor: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Имя заказчика</label>
+              <input
+                type="text"
+                value={orderData.clientName}
+                onChange={(e) => setOrderData({ ...orderData, clientName: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Введите имя"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Телефон</label>
+              <input
+                type="text"
+                value={orderData.clientPhone}
+                onChange={(e) => setOrderData({ ...orderData, clientPhone: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="+7 999 123-45-67"
+              />
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-800">Товары и услуги</h2>
+              <button
+                onClick={addItem}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
+              >
+                <Plus size={18} />
+                Добавить позицию
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {orderData.items.map((item, index) => (
+                <div key={item.id} className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 grid grid-cols-5 gap-4">
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Наименование</label>
+                        <input
+                          type="text"
+                          value={item.name}
+                          onChange={(e) => updateItem(item.id, 'name', e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Название товара/услуги"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Кол-во</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 1)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Цена</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.price}
+                          onChange={(e) => updateItem(item.id, 'price', parseFloat(e.target.value) || 0)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Скидка %</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={item.discount}
+                          onChange={(e) => updateItem(item.id, 'discount', parseFloat(e.target.value) || 0)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col justify-between h-full pt-8">
+                      <div className="text-right mb-2">
+                        <span className="text-lg font-bold text-blue-600">
+                          {calculateItemTotal(item).toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ₽
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => removeItem(item.id)}
+                        disabled={orderData.items.length === 1}
+                        className="bg-red-600 text-white p-2 rounded hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-gray-300 pt-6">
+            <div className="flex justify-end items-center gap-8 mb-4">
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-medium text-gray-700">Общая скидка на весь заказ:</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={orderData.generalDiscount}
+                  onChange={(e) => setOrderData({ ...orderData, generalDiscount: parseFloat(e.target.value) || 0 })}
+                  className="w-24 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">%</span>
+              </div>
+            </div>
+
+            {hasDiscounts() && (
+              <div className="text-right mb-2">
+                <span className="text-lg text-gray-700">Сумма: </span>
+                <span className="text-lg font-semibold">
+                  {calculateSubtotal().toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ₽
+                </span>
+              </div>
+            )}
+
+            <div className="text-right mb-6">
+              <span className="text-2xl text-gray-700">
+                {hasDiscounts() ? 'Итого со скидкой: ' : 'Итого: '}
+              </span>
+              <span className="text-3xl font-bold text-blue-600">
+                {calculateTotal().toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ₽
+              </span>
+            </div>
+
+            <div className="flex justify-end gap-4">
+              <button
+                onClick={() => { setView('list'); setCurrentOrder(null); resetForm(); }}
+                className="bg-gray-600 text-white px-8 py-3 rounded-lg hover:bg-gray-700"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={saveOrder}
+                className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 font-semibold"
+              >
+                Сохранить заказ
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
