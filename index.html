@@ -865,4 +865,368 @@
                 subtotal += itemTotal;
             });
             
-            const generalDiscount = parseFloat(document.getElementById('general
+            const generalDiscount = parseFloat(document.getElementById('generalDiscount').value) || 0;
+            const total = subtotal - (subtotal * generalDiscount / 100);
+            
+            const hasDiscounts = generalDiscount > 0 || Array.from(items).some(item => 
+                parseFloat(item.querySelector('.item-discount').value) > 0
+            );
+            
+            if (generalDiscount > 0) {
+                document.getElementById('subtotalRow').classList.remove('hidden');
+                document.getElementById('subtotalAmount').textContent = subtotal.toLocaleString('ru-RU', {minimumFractionDigits: 2}) + ' ₽';
+                document.getElementById('totalLabel').textContent = 'Итого со скидкой: ';
+            } else {
+                document.getElementById('subtotalRow').classList.add('hidden');
+                document.getElementById('totalLabel').textContent = 'Итого: ';
+            }
+            
+            document.getElementById('totalAmount').textContent = total.toLocaleString('ru-RU', {minimumFractionDigits: 2}) + ' ₽';
+        }
+
+        // Сохранить заказ
+        function saveOrder() {
+            const clientName = document.getElementById('clientName').value.trim();
+            const clientPhone = document.getElementById('clientPhone').value.trim();
+            
+            if (!clientName || !clientPhone) {
+                alert('Заполните имя заказчика и номер телефона');
+                return;
+            }
+            
+            const items = [];
+            document.querySelectorAll('.item-row').forEach(item => {
+                const name = item.querySelector('.item-name').value.trim();
+                if (name) {
+                    items.push({
+                        name: name,
+                        quantity: parseFloat(item.querySelector('.item-quantity').value) || 1,
+                        price: parseFloat(item.querySelector('.item-price').value) || 0,
+                        discount: parseFloat(item.querySelector('.item-discount').value) || 0
+                    });
+                }
+            });
+            
+            if (items.length === 0) {
+                alert('Добавьте хотя бы один товар');
+                return;
+            }
+            
+            const order = {
+                id: currentOrderId || 'order_' + Date.now(),
+                date: document.getElementById('orderDate').value,
+                executor: document.getElementById('executor').value,
+                clientName: clientName,
+                clientPhone: clientPhone,
+                items: items,
+                generalDiscount: parseFloat(document.getElementById('generalDiscount').value) || 0,
+                createdAt: Date.now()
+            };
+            
+            try {
+                if (currentOrderId) {
+                    const index = orders.findIndex(o => o.id === currentOrderId);
+                    if (index !== -1) {
+                        orders[index] = order;
+                    }
+                } else {
+                    orders.push(order);
+                }
+                
+                saveAllOrders();
+                loadOrders();
+                showList();
+            } catch (error) {
+                alert('Ошибка сохранения: ' + error.message);
+            }
+        }
+
+        // Рассчитать итог заказа
+        function calculateOrderTotal(order) {
+            let subtotal = 0;
+            order.items.forEach(item => {
+                const itemSubtotal = item.quantity * item.price;
+                subtotal += itemSubtotal - (itemSubtotal * (item.discount || 0) / 100);
+            });
+            return subtotal - (subtotal * (order.generalDiscount || 0) / 100);
+        }
+
+        // Печать заказа
+        function printOrder(orderId) {
+            const order = orders.find(o => o.id === orderId);
+            if (!order) return;
+            
+            const total = calculateOrderTotal(order);
+            const subtotal = order.items.reduce((sum, item) => {
+                const itemTotal = item.quantity * item.price;
+                return sum + (itemTotal - (itemTotal * (item.discount || 0) / 100));
+            }, 0);
+            
+            const hasDiscounts = order.generalDiscount > 0 || order.items.some(item => item.discount > 0);
+            const date = new Date(order.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+            
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Заказ от ${date}</title>
+                    <style>
+                        @media print { body { margin: 0; } .no-print { display: none; } }
+                        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 20px; }
+                        .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+                        .header h1 { margin: 0; font-size: 18px; }
+                        .info-section { margin: 20px 0; }
+                        .info-row { display: flex; margin: 8px 0; }
+                        .info-label { width: 200px; }
+                        .info-value { font-weight: bold; }
+                        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                        th, td { border: 1px solid #000; padding: 8px; text-align: left; }
+                        th { background-color: #f0f0f0; }
+                        .center { text-align: center; }
+                        .right { text-align: right; }
+                        .total-section { text-align: right; margin-top: 20px; font-size: 16px; }
+                        .total-row { margin: 5px 0; }
+                        .total-amount { font-weight: bold; font-size: 18px; }
+                        .footer { margin-top: 30px; font-size: 14px; }
+                        .print-button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <button class="print-button no-print" onclick="window.print()">Печать / Сохранить как PDF</button>
+                    <div class="header">
+                        <h1>Заказ от ${date}</h1>
+                    </div>
+                    <div class="info-section">
+                        <div class="info-row">
+                            <div class="info-label">Исполнитель:</div>
+                            <div class="info-value">${order.executor}</div>
+                        </div>
+                        <div class="info-row">
+                            <div class="info-label">Заказчик:</div>
+                            <div class="info-value">${order.clientName}, тел.: ${order.clientPhone}</div>
+                        </div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="center">№</th>
+                                <th>Товары (работы, услуги)</th>
+                                <th class="center">Кол-во</th>
+                                <th class="right">Цена</th>
+                                ${hasDiscounts ? '<th class="center">Скидка</th>' : ''}
+                                <th class="right">Сумма</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${order.items.map((item, idx) => {
+                                const itemSubtotal = item.quantity * item.price;
+                                const itemTotal = itemSubtotal - (itemSubtotal * (item.discount || 0) / 100);
+                                return `
+                                    <tr>
+                                        <td class="center">${idx + 1}</td>
+                                        <td>${item.name}</td>
+                                        <td class="center">${item.quantity}</td>
+                                        <td class="right">${item.price.toLocaleString('ru-RU', {minimumFractionDigits: 2})}</td>
+                                        ${hasDiscounts ? `<td class="center">${item.discount > 0 ? item.discount + '%' : '-'}</td>` : ''}
+                                        <td class="right">${itemTotal.toLocaleString('ru-RU', {minimumFractionDigits: 2})}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                    <div class="total-section">
+                        ${order.generalDiscount > 0 ? `
+                            <div class="total-row">
+                                <span>Сумма: </span>
+                                <span>${subtotal.toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽</span>
+                            </div>
+                            <div class="total-row">
+                                <span>Общая скидка: </span>
+                                <span>${order.generalDiscount}%</span>
+                            </div>
+                            <div class="total-row">
+                                <span>Итого со скидкой: </span>
+                                <span class="total-amount">${total.toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽</span>
+                            </div>
+                        ` : `
+                            <div class="total-row">
+                                <span>Итого: </span>
+                                <span class="total-amount">${total.toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽</span>
+                            </div>
+                        `}
+                    </div>
+                    <div class="footer">
+                        Всего наименований ${order.items.length}, на сумму ${total.toLocaleString('ru-RU', {minimumFractionDigits: 2})} руб.
+                    </div>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+        }
+
+        // Переключение видов
+        function showView(viewName) {
+            document.getElementById('listView').classList.toggle('hidden', viewName !== 'list');
+            document.getElementById('editView').classList.toggle('hidden', viewName !== 'edit');
+        }
+
+        function showList() {
+            showView('list');
+        }
+        
+        // Переключение вкладок
+        function switchTab(tabName) {
+            currentTab = tabName;
+            
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            document.getElementById('ordersTab').classList.toggle('hidden', tabName !== 'orders');
+            document.getElementById('reserveTab').classList.toggle('hidden', tabName !== 'reserve');
+            document.getElementById('statsTab').classList.toggle('hidden', tabName !== 'stats');
+            
+            if (tabName === 'stats') {
+                updateStats();
+            }
+        }
+        
+        // Управление резервом
+        function showAddReserve() {
+            document.getElementById('addReserveForm').classList.remove('hidden');
+            document.getElementById('reserveDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('reserveAmount').value = '';
+            document.getElementById('reserveComment').value = '';
+        }
+        
+        function hideAddReserve() {
+            document.getElementById('addReserveForm').classList.add('hidden');
+        }
+        
+        function saveReserve() {
+            const amount = parseFloat(document.getElementById('reserveAmount').value);
+            const comment = document.getElementById('reserveComment').value.trim();
+            
+            if (!amount || amount <= 0) {
+                alert('Введите корректную сумму');
+                return;
+            }
+            
+            const reserve = {
+                id: 'reserve_' + Date.now(),
+                date: document.getElementById('reserveDate').value,
+                amount: amount,
+                comment: comment,
+                status: 'open',
+                closedDate: null,
+                createdAt: Date.now()
+            };
+            
+            reserves.push(reserve);
+            saveAllReserves();
+            loadReserves();
+            hideAddReserve();
+        }
+        
+        function closeReserve(reserveId) {
+            if (!confirm('Закрыть эту запись резерва?')) return;
+            
+            const reserve = reserves.find(r => r.id === reserveId);
+            if (reserve) {
+                reserve.status = 'closed';
+                reserve.closedDate = new Date().toISOString().split('T')[0];
+                saveAllReserves();
+                loadReserves();
+            }
+        }
+        
+        function deleteReserve(reserveId) {
+            if (!confirm('Удалить запись резерва?')) return;
+            
+            reserves = reserves.filter(r => r.id !== reserveId);
+            saveAllReserves();
+            loadReserves();
+        }
+        
+        function renderReservesList() {
+            const container = document.getElementById('reservesList');
+            
+            if (reserves.length === 0) {
+                container.innerHTML = `
+                    <div class="card empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <p style="font-size: 18px;">Записей резерва пока нет</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = reserves.map(reserve => {
+                const date = new Date(reserve.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+                const isClosed = reserve.status === 'closed';
+                
+                return `
+                    <div class="reserve-item ${isClosed ? 'closed' : ''}">
+                        <div class="reserve-info">
+                            <div class="reserve-amount">${reserve.amount.toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽</div>
+                            <div class="reserve-date">${date}</div>
+                            ${reserve.comment ? `<div style="color: #6b7280; font-size: 14px; margin-top: 4px;">${reserve.comment}</div>` : ''}
+                            <span class="reserve-status ${reserve.status}">
+                                ${isClosed ? '✓ Закрыто' + (reserve.closedDate ? ' (' + new Date(reserve.closedDate).toLocaleDateString('ru-RU') + ')' : '') : '○ Открыто'}
+                            </span>
+                        </div>
+                        <div class="btn-group">
+                            ${!isClosed ? `<button class="btn btn-success btn-sm" onclick="closeReserve('${reserve.id}')">✓ Закрыть</button>` : ''}
+                            <button class="btn btn-danger btn-sm" onclick="deleteReserve('${reserve.id}')">🗑️</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Обновление статистики
+        function updateStats() {
+            const totalOrders = orders.length;
+            const totalRevenue = orders.reduce((sum, order) => sum + calculateOrderTotal(order), 0);
+            const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+            
+            const openReserves = reserves.filter(r => r.status === 'open');
+            const reserveBalance = openReserves.reduce((sum, r) => sum + r.amount, 0);
+            
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+            
+            const monthOrders = orders.filter(order => {
+                const orderDate = new Date(order.date);
+                return orderDate.getMonth() === currentMonth && orderDate.getFullYear() === currentYear;
+            });
+            
+            const monthRevenue = monthOrders.reduce((sum, order) => sum + calculateOrderTotal(order), 0);
+            
+            const monthReserves = reserves.filter(reserve => {
+                const reserveDate = new Date(reserve.date);
+                return reserveDate.getMonth() === currentMonth && reserveDate.getFullYear() === currentYear;
+            });
+            
+            const monthReserveTaken = monthReserves.reduce((sum, r) => sum + r.amount, 0);
+            const monthReserveClosed = monthReserves.filter(r => r.status === 'closed').reduce((sum, r) => sum + r.amount, 0);
+            
+            document.getElementById('statTotalOrders').textContent = totalOrders;
+            document.getElementById('statTotalRevenue').textContent = totalRevenue.toLocaleString('ru-RU', {minimumFractionDigits: 0}) + ' ₽';
+            document.getElementById('statAvgOrder').textContent = avgOrder.toLocaleString('ru-RU', {minimumFractionDigits: 0}) + ' ₽';
+            document.getElementById('statReserveBalance').textContent = reserveBalance.toLocaleString('ru-RU', {minimumFractionDigits: 0}) + ' ₽';
+            
+            document.getElementById('statMonthOrders').textContent = monthOrders.length;
+            document.getElementById('statMonthRevenue').textContent = monthRevenue.toLocaleString('ru-RU', {minimumFractionDigits: 0}) + ' ₽';
+            document.getElementById('statMonthReserve').textContent = monthReserveTaken.toLocaleString('ru-RU', {minimumFractionDigits: 0}) + ' ₽';
+            document.getElementById('statMonthClosed').textContent = monthReserveClosed.toLocaleString('ru-RU', {minimumFractionDigits: 0}) + ' ₽';
+        }
+    </script>
+</body>
+</html>
